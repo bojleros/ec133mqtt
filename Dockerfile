@@ -13,4 +13,4 @@ WORKDIR /app
 
 ENTRYPOINT ["python3"]
 
-CMD ["main.py"]
+CMD ["-u", "main.py"]
