@@ -14,8 +14,14 @@ from modbus_tk import modbus_rtu
 import paho.mqtt.publish as publish
 import paho.mqtt.client as mqtt
 
+
 def msg(text):
-    print("%s : %s" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"),text))
+    print("%s : %s" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"), text))
+
+
+def sigh(signum, frame):
+    return
+
 
 def getenv():
     conf = {
@@ -54,7 +60,7 @@ def getenv():
 
 class Ec133:
 
-    def __init__(self, serconf, ecconf , callback=False):
+    def __init__(self, serconf, ecconf, callback=False):
         self.serconf = serconf
         self.ecconf = ecconf
         self.ser = False
@@ -64,7 +70,7 @@ class Ec133:
         self.brightness = [255, 255, 255]
         self.register = [255, 255, 255]
         self.lock = threading.Lock()
-    
+
     def __del__(self):
         msg("Closing serial device")
         if bool(self.rtu):
@@ -72,7 +78,7 @@ class Ec133:
         if bool(self.ser):
             del self.ser
 
-    def set_callback(self,callback):
+    def set_callback(self, callback):
         self.callback = callback
 
     def connect(self):
@@ -102,28 +108,29 @@ class Ec133:
             raise e
 
     def set_channel(self, client, userdata, message):
+
         ch = int(userdata['channel'])
 
-        payload_str = str(message.payload.decode("utf-8"))
-        
         try:
-            payload = json.loads(payload_str)
+            payload = json.loads(message.payload.decode("utf-8"))
         except Exception as e:
-            msg("Channel%s : Malformed json message : %s" % (ch,e))
+            msg("Channel%s : Malformed json message : %s" % (ch, e))
             return
 
         if type(payload) is not dict:
-            msg("Channel%s : mqtt_json format expected , got %s!" % (ch,type(payload)))
+            msg("Channel%s : mqtt_json format expected , got %s!" % (ch, type(payload)))
             return
 
         self.lock.acquire(blocking=True, timeout=-1)
 
-        msg("Channel%s: %s" % (ch,payload))
-        
-        if payload.get("brightness",False):
-            self.brightness[ch] = int(payload['brightness'])
+        msg("Channel%s command: %s" % (ch, payload))
 
-        if payload.get('state','ON') == 'ON':
+        if payload.get("brightness", False):
+            self.brightness[ch] = int(payload['brightness'])
+        else:
+            payload['brightness'] = int(self.brightness[ch])
+
+        if payload.get('state', 'ON') == 'ON':
             self.register[ch] = int(self.brightness[ch])
         else:
             self.register[ch] = int(0)
@@ -143,7 +150,8 @@ class Ec133:
         else:
             time.sleep(0.02)
             if bool(self.callback):
-                self.callback(ch,payload_str)
+
+                self.callback(ch, json.dumps(payload))
             self.lock.release()
 
 
@@ -177,33 +185,37 @@ class Mqtt:
         for ch, topic in self.ctopics.items():
             self._consume_topic(ch)
 
-    def postback(self,ch,payload):
+    def postback(self, ch, payload):
         auth = None
         if self.mqconf['username'] != None:
-            auth = { 'username': self.mqconf['username'], 
+            auth = {'username': self.mqconf['username'],
                     'password': self.mqconf['password']
-                }
+                    }
 
         try:
             publish.single(self.stopics[str(ch)],
-                hostname = self.mqconf['address'],
-                port=self.mqconf['port'],
-                auth=auth,
-                payload=payload,
-                qos=self.mqconf['qos'],
-                keepalive=15,
-                retain=True)
+                           hostname=self.mqconf['address'],
+                           port=self.mqconf['port'],
+                           auth=auth,
+                           payload=payload,
+                           qos=self.mqconf['qos'],
+                           keepalive=15,
+                           retain=True)
         except Exception as e:
-            msg("Unable to send channel%s state update : %s" % (ch,e))
+            msg("Unable to send channel%s state update : %s" % (ch, e))
         else:
-            msg("Channel%s state update sent" % ch)
+            msg("Channel%s state: %s" % (ch, payload))
 
 
 def main():
     """
     Main routine
     """
-    
+
+    # signals are only used to break out of signal.pause()
+    signal.signal(signal.SIGINT, (lambda signum, frame: None))
+    signal.signal(signal.SIGTERM, (lambda signum, frame: None))
+
     msg("Start ...")
     conf = getenv()
 
@@ -212,7 +224,8 @@ def main():
     ec.connect()
 
     msg("Consume mqtt topics")
-    mq = Mqtt(conf['mqtt'], conf['ec133']['command_topics'], conf['ec133']['state_topics'], ec.set_channel)
+    mq = Mqtt(conf['mqtt'], conf['ec133']['command_topics'],
+              conf['ec133']['state_topics'], ec.set_channel)
     mq.consume_all()
     ec.set_callback(mq.postback)
 
@@ -225,4 +238,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
