@@ -7,6 +7,7 @@ import os
 import json
 import signal
 import threading
+import math
 from datetime import datetime
 import modbus_tk
 import modbus_tk.defines as cst
@@ -31,6 +32,12 @@ def getenv():
         'ec133': {
             'addr': os.environ.get('EC133_ADDR', 1),
             'timeout': os.environ.get('EC133_TIMEOUT', 0.2),
+            'linearization': {
+                'active': bool(os.environ.get('LINEARIZE', True)),
+                'range': float(os.environ.get('LINEARIZE_RANGE', 255)),
+                'offset': float(os.environ.get('LINEARIZE_OFFSET', 0.05)),
+                'tau': float(os.environ.get('LINEARIZE_TAU', 0.55))
+            },
             'command_topics': {
                 '0': os.environ.get('CH0_COMMAND', ''),
                 '1': os.environ.get('CH1_COMMAND', ''),
@@ -103,6 +110,29 @@ class Ec133:
             msg("Unable to initialize RTU master")
             raise e
 
+    def _linearize(self,ch):
+
+        linconf = self.ecconf.get('linearization')
+
+        if linconf.get('active', False) == False:
+            return
+
+        ch = int(ch)
+        new = self.register
+
+        if self.register[ch] < 10:
+            return
+
+        # f(x) = range*(1-offset)*exp(-(1-(x/range))/tau) + range*offset
+        exponent = (-1 * ( 1 - ( float(new[ch]) / linconf['range']))) / linconf['tau']
+        new[ch] = int(linconf['range']
+                            * (1 - linconf['offset'])
+                            * math.exp(exponent)
+                            + (linconf['range'] * linconf['offset'])
+                            )
+        msg("Linearized as : %s" % str(new))
+        self.register = new
+
     def set_channel(self, client, userdata, message):
 
         ch = int(userdata['channel'])
@@ -125,12 +155,13 @@ class Ec133:
             self.brightness[ch] = int(payload['brightness'])
         else:
             payload['brightness'] = int(self.brightness[ch])
-            print(payload)
 
         if payload.get('state', 'ON') == 'ON':
             self.register[ch] = int(self.brightness[ch])
         else:
             self.register[ch] = int(0)
+
+        self._linearize(ch)
 
         try:
             self.rtu.execute(self.ecconf['addr'],
