@@ -125,6 +125,7 @@ class Ec133:
             self.brightness[ch] = int(payload['brightness'])
         else:
             payload['brightness'] = int(self.brightness[ch])
+            print(payload)
 
         if payload.get('state', 'ON') == 'ON':
             self.register[ch] = int(self.brightness[ch])
@@ -147,7 +148,7 @@ class Ec133:
             time.sleep(0.02)
             if bool(self.callback):
 
-                self.callback(ch, json.dumps(payload))
+                self.callback(ch, payload)
             self.lock.release()
 
 
@@ -188,19 +189,23 @@ class Mqtt:
                     'password': self.mqconf['password']
                     }
 
+        # homeassistant lack proper typing
+        # on the other side json module is constantly puting double quotation marks around int !
+        payload_str = "{\"state\": \"%s\", \"brightness\": %s}" % (payload['state'],payload['brightness'])
+
         try:
             publish.single(self.stopics[str(ch)],
                            hostname=self.mqconf['address'],
                            port=self.mqconf['port'],
                            auth=auth,
-                           payload=payload,
+                           payload=payload_str,
                            qos=self.mqconf['qos'],
                            keepalive=15,
                            retain=True)
         except Exception as e:
             msg("Unable to send channel%s state update : %s" % (ch, e))
         else:
-            msg("Channel%s state: %s" % (ch, payload))
+            msg("Channel%s state: %s" % (ch, payload_str))
 
 
 def main():
