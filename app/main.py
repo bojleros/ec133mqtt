@@ -2,21 +2,26 @@
 
 import serial
 import time
-import sys
 import os
+import sys
 import json
 import signal
 import threading
 import math
 from datetime import datetime
-import modbus_tk
 import modbus_tk.defines as cst
 from modbus_tk import modbus_rtu
 import paho.mqtt.publish as publish
-import paho.mqtt.client as mqtt
+import paho.mqtt.client as subscribe
 
 
 def msg(text):
+    """
+    Function that prints timestamped messages on stdout
+
+    :param text: Message body
+    :return: It does not need to return anything
+    """
     print("%s : %s" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"), text))
 
 
@@ -54,7 +59,7 @@ def getenv():
             'port': os.environ.get('MQTT_PORT', 1883),
             'username': os.environ.get('MQTT_USER', None),
             'password': os.environ.get('MQTT_PASS', None),
-            'qos': os.environ.get('MQTT_QOS', int(0))
+            'qos': os.environ.get('MQTT_QOS', int(1))
         }
     }
 
@@ -63,11 +68,11 @@ def getenv():
 
 class Ec133:
 
-    def __init__(self, serconf, ecconf, callback=False):
+    def __init__(self, serconf, ecconf, callback=None):
         self.serconf = serconf
         self.ecconf = ecconf
-        self.ser = False
-        self.rtu = False
+        self.ser = None
+        self.rtu = None
         self.reinit_count = 3
         self.callback = callback
         self.brightness = [255, 255, 255]
@@ -110,11 +115,11 @@ class Ec133:
             msg("Unable to initialize RTU master")
             raise e
 
-    def _linearize(self,ch):
+    def _linearize(self, ch):
 
         linconf = self.ecconf.get('linearization')
 
-        if linconf.get('active', False) == False:
+        if linconf.get('active', False) is False:
             return
 
         ch = int(ch)
@@ -124,12 +129,13 @@ class Ec133:
             return
 
         # f(x) = range*(1-offset)*exp(-(1-(x/range))/tau) + range*offset
-        exponent = (-1 * ( 1 - ( float(new[ch]) / linconf['range']))) / linconf['tau']
+        exponent = (-1 * (1 - (float(new[ch]) / linconf['range']))) / linconf['tau']
         new[ch] = int(linconf['range']
-                            * (1 - linconf['offset'])
-                            * math.exp(exponent)
-                            + (linconf['range'] * linconf['offset'])
-                            )
+                      * (1 - linconf['offset'])
+                      * math.exp(exponent)
+                      + (linconf['range'] * linconf['offset'])
+                      )
+
         msg("Linearized as : %s" % str(new))
         self.register = new
 
@@ -174,7 +180,7 @@ class Ec133:
             time.sleep(0.2)
             self.lock.release()
             self.set_channel(client, userdata, message)
-            #raise e
+            # raise e
         else:
             time.sleep(0.02)
             if bool(self.callback):
@@ -199,10 +205,10 @@ class Mqtt:
             h.disconnect()
 
     def _consume_topic(self, channel):
-        c = mqtt.Client()
+        c = subscribe.Client()
         c.on_message = self.callback
         c.user_data_set({'channel': channel})
-        if self.mqconf['username'] != None:
+        if self.mqconf['username'] is not None:
             c.username_pw_set(self.mqconf['username'], password=self.mqconf['password'])
         c.connect(self.mqconf['address'], port=self.mqconf['port'], keepalive=15)
         c.subscribe(self.ctopics[channel], qos=self.mqconf['qos'])
@@ -215,14 +221,14 @@ class Mqtt:
 
     def postback(self, ch, payload):
         auth = None
-        if self.mqconf['username'] != None:
+        if self.mqconf['username'] is not None:
             auth = {'username': self.mqconf['username'],
                     'password': self.mqconf['password']
                     }
 
         # homeassistant lack proper typing
         # on the other side json module is constantly puting double quotation marks around int !
-        payload_str = "{\"state\": \"%s\", \"brightness\": %s}" % (payload['state'],payload['brightness'])
+        payload_str = "{\"state\": \"%s\", \"brightness\": %s}" % (payload['state'], payload['brightness'])
 
         try:
             publish.single(self.stopics[str(ch)],
@@ -253,7 +259,11 @@ def main():
 
     msg("Connect ec133")
     ec = Ec133(conf['serial'], conf['ec133'])
-    ec.connect()
+    try:
+        ec.connect()
+    except Exception as e:
+        msg(str(e))
+        sys.exit(-1)
 
     msg("Consume mqtt topics")
     mq = Mqtt(conf['mqtt'], conf['ec133']['command_topics'],
