@@ -75,8 +75,8 @@ class Ec133:
         self.rtu = None
         self.reinit_count = 3
         self.callback = callback
-        self.brightness = [255, 255, 255]
-        self.register = [255, 255, 255]
+        self.brightness = [255] * 3
+        self.register = [255] * 3
         self.lock = threading.Lock()
 
     def __del__(self):
@@ -196,7 +196,7 @@ class Mqtt:
         self.ctopics = command_topics
         self.stopics = state_topics
         self.callback = callback
-        self.connhandlers = []
+        self.connhandlers = [None] * 3
 
     def __del__(self):
         msg("Stopping all mq connections")
@@ -204,16 +204,42 @@ class Mqtt:
             h.loop_stop()
             h.disconnect()
 
+    def _on_connect(self, client, userdata, flags, rc):
+        ch = str(userdata.get("channel"))
+        msg("Channel%s : Connected" % ch)
+        client.subscribe(self.ctopics[ch], qos=self.mqconf['qos'])
+
+    def _on_disconnect(self, client, userdata, flags, rc):
+        msg("Channel%s : Disconnect" % userdata.get("channel"))
+
+    def _connect(self, c, ch, depth=1):
+        try:
+            c.connect(self.mqconf['address'], port=self.mqconf['port'], keepalive=15)
+            depth += 1
+        except Exception as e:
+            msg("Channel%s : Connection failed : %s" % (ch,str(e)))
+            if depth <= 60:
+                time.sleep(10)
+                msg("Channel%s : Reconnecting ..." % ch)
+                self._connect(c, ch, depth)
+            else:
+                msg("Channel%s : Reconnecting was failing for too long ..." % ch)
+                raise e
+        else:
+            msg("Channel%s : Connected" % ch)
+            self.connhandlers[int(ch)] = c
+
     def _consume_topic(self, channel):
         c = subscribe.Client()
         c.on_message = self.callback
+        c.on_connect = self._on_connect
+        c.on_disconnect = self._on_disconnect
         c.user_data_set({'channel': channel})
         if self.mqconf['username'] is not None:
             c.username_pw_set(self.mqconf['username'], password=self.mqconf['password'])
-        c.connect(self.mqconf['address'], port=self.mqconf['port'], keepalive=15)
+        self._connect(c, channel)
         c.subscribe(self.ctopics[channel], qos=self.mqconf['qos'])
         c.loop_start()
-        self.connhandlers.append(c)
 
     def consume_all(self):
         for ch, topic in self.ctopics.items():
