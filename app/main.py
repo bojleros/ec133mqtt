@@ -183,10 +183,9 @@ class Ec133:
             # raise e
         else:
             time.sleep(0.02)
-            if bool(self.callback):
-
-                self.callback(ch, payload)
             self.lock.release()
+            if bool(self.callback):
+                self.callback(ch, payload)
 
 
 class Mqtt:
@@ -196,53 +195,79 @@ class Mqtt:
         self.ctopics = command_topics
         self.stopics = state_topics
         self.callback = callback
-        self.connhandlers = [None] * 3
+        self.consumers = [None] * 3
 
     def __del__(self):
         msg("Stopping all mq connections")
-        for h in self.connhandlers:
-            h.loop_stop()
-            h.disconnect()
+        for h in self.consumers:
+            if bool(h):
+                del h
 
-    def _on_connect(self, client, userdata, flags, rc):
-        ch = str(userdata.get("channel"))
-        msg("Channel%s : Connected" % ch)
-        client.subscribe(self.ctopics[ch], qos=self.mqconf['qos'])
+    class Consumer:
 
-    def _on_disconnect(self, client, userdata, rc):
-        msg("Channel%s : Disconnect" % userdata.get("channel"))
+        def __init__(self, mqconf, channel, topic, msg_callback):
+            self.mqconf = mqconf
+            self.channel = str(channel)
+            self.topic = topic
+            self.msg_callback = msg_callback
 
-    def _connect(self, c, ch, depth=1):
-        try:
-            c.connect(self.mqconf['address'], port=self.mqconf['port'], keepalive=15)
-            depth += 1
-        except Exception as e:
-            msg("Channel%s : Connection failed : %s" % (ch,str(e)))
-            if depth <= 60:
-                time.sleep(10)
-                msg("Channel%s : Reconnecting ..." % ch)
-                self._connect(c, ch, depth)
-            else:
-                msg("Channel%s : Reconnecting was failing for too long ..." % ch)
+            self.conn = subscribe.Client()
+            self.conn.on_message = self.msg_callback
+            self.conn.on_connect = self._on_connect
+            self.conn.on_disconnect = self._on_disconnect
+            self.conn.user_data_set({'channel': self.channel})
+
+            if self.mqconf['username'] is not None:
+                self.conn.username_pw_set(self.mqconf['username'],
+                                          password=self.mqconf['password'])
+
+            self._connect()
+            # subscribe is executed via _on_connect
+            self.conn.loop_start()
+
+        def __del__(self):
+            if bool(self.conn):
+                msg("Channel%s : Closing connection" % self.channel)
+                self.conn.loop_stop()
+                self.conn.disconnect()
+                del self.conn
+
+        def _connect(self, depth=0):
+            try:
+                self.conn.connect(self.mqconf['address'], port=self.mqconf['port'], keepalive=15)
+            except Exception as e:
+                msg("Channel%s : Connection failed : %s" % (self.channel, str(e)))
+                depth += 1
+                if depth <= 60:
+                    msg("Channel%s : Waiting 10 seconds before reconnecting ..." % self.channel)
+                    time.sleep(10)
+                    self._connect(depth)
+                else:
+                    msg("Channel%s : Reconnecting was failing for too long ..." % self.channel)
+                    raise e
+
+        def _subscribe(self):
+            try:
+                self.conn.subscribe(self.topic, qos=self.mqconf['qos'])
+            except Exception as e:
+                msg("Channel%s: Subscription exception : %s" % (self.channel, str(e)))
                 raise e
-        else:
-            self.connhandlers[int(ch)] = c
 
-    def _consume_topic(self, channel):
-        c = subscribe.Client()
-        c.on_message = self.callback
-        c.on_connect = self._on_connect
-        c.on_disconnect = self._on_disconnect
-        c.user_data_set({'channel': channel})
-        if self.mqconf['username'] is not None:
-            c.username_pw_set(self.mqconf['username'], password=self.mqconf['password'])
-        self._connect(c, channel)
-        c.subscribe(self.ctopics[channel], qos=self.mqconf['qos'])
-        c.loop_start()
+        def _on_connect(self, client, userdata, flags, rc):
+            msg("Channel%s : Connected" % self.channel)
+            self._subscribe()
+
+        def _on_disconnect(self, client, userdata, rc):
+            msg("Channel%s : Disconnected" % self.channel)
 
     def consume_all(self):
         for ch, topic in self.ctopics.items():
-            self._consume_topic(ch)
+            try:
+                c = self.Consumer(self.mqconf, ch, topic, self.callback)
+            except Exception as e:
+                raise e
+            else:
+                self.consumers[int(ch)] = c
 
     def postback(self, ch, payload):
         auth = None
@@ -252,7 +277,7 @@ class Mqtt:
                     }
 
         # homeassistant lack proper typing
-        # on the other side json module is constantly puting double quotation marks around int !
+        # on the other side json module is constantly puting double quotation marks around ints ...
         payload_str = "{\"state\": \"%s\", \"brightness\": %s}" % (payload['state'], payload['brightness'])
 
         try:
