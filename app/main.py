@@ -209,7 +209,7 @@ class Mqtt:
         msg("Channel%s : Connected" % ch)
         client.subscribe(self.ctopics[ch], qos=self.mqconf['qos'])
 
-    def _on_disconnect(self, userdata, rc):
+    def _on_disconnect(self, client, userdata, rc):
         msg("Channel%s : Disconnect" % userdata.get("channel"))
 
     def _connect(self, c, ch, depth=1):
