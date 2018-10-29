@@ -209,7 +209,7 @@ class Mqtt:
         msg("Channel%s : Connected" % ch)
         client.subscribe(self.ctopics[ch], qos=self.mqconf['qos'])
 
-    def _on_disconnect(self, client, userdata, flags, rc):
+    def _on_disconnect(self, userdata, rc):
         msg("Channel%s : Disconnect" % userdata.get("channel"))
 
     def _connect(self, c, ch, depth=1):
@@ -226,7 +226,6 @@ class Mqtt:
                 msg("Channel%s : Reconnecting was failing for too long ..." % ch)
                 raise e
         else:
-            msg("Channel%s : Connected" % ch)
             self.connhandlers[int(ch)] = c
 
     def _consume_topic(self, channel):
