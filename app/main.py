@@ -79,6 +79,7 @@ class Ec133:
         self.callback = callback
         self.brightness = [255] * 3
         self.register = [255] * 3
+        self.chstate = ["ON"] * 3
         self.lock = threading.Lock()
         self.tgstate = "ON"
         self.tgbrightness = [0] * 3
@@ -158,7 +159,6 @@ class Ec133:
             return
 
         if ch == 3:
-
             if self.tgstate == "ON":
                 # it is on , we are goint to off but first store curent settings
                 self.tgbrightness = self.brightness
@@ -170,12 +170,13 @@ class Ec133:
 
             msg("Toggle command %s" % self.tgstate)
             for i in range(0, 2):
-                payload['state'] = self.tgstate
-                self._send(client, userdata, message, payload, ch)
+                payload['state'] = self.chstate[i]
+                self._send(client, userdata, message, payload, i)
 
             return
 
         self._send(client, userdata, message, payload, ch)
+
 
     def _send(self, client, userdata, message, payload, ch):
 
@@ -191,8 +192,10 @@ class Ec133:
         if payload.get('state', 'ON') == 'ON':
             self.register[ch] = int(self.brightness[ch])
             self.tgstate = "ON"
+            self.chstate[ch] = "ON"
         else:
             self.register[ch] = int(0)
+            self.chstate[ch] = "OFF"
 
         self._linearize(ch)
 
