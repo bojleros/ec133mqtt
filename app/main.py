@@ -83,6 +83,7 @@ class Ec133:
         self.lock = threading.Lock()
         self.tgstate = "ON"
         self.tgbrightness = [0] * 3
+        self.tgchstate = ["OFF"] * 3
 
     def __del__(self):
         msg("Closing serial device")
@@ -163,10 +164,13 @@ class Ec133:
                 # it is on , we are goint to off but first store curent settings
                 self.tgbrightness = self.brightness
                 self.tgstate = "OFF"
+                self.tgchstate = self.chstate
+                self.chstate = ["OFF"] * 3
             else:
                 # it is off , we are goint to restore settings
                 self.brightness = self.tgbrightness
                 self.tgstate = "ON"
+                self.chstate = self.tgchstate
 
             msg("Toggle command %s" % self.tgstate)
             for i in range(0, 2):
