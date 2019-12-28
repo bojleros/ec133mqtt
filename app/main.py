@@ -46,12 +46,14 @@ def getenv():
             'command_topics': {
                 '0': os.environ.get('CH0_COMMAND', ''),
                 '1': os.environ.get('CH1_COMMAND', ''),
-                '2': os.environ.get('CH2_COMMAND', '')
+                '2': os.environ.get('CH2_COMMAND', ''),
+                '3': os.environ.get('CHTG_COMMAND', '')
             },
             'state_topics': {
                 '0': os.environ.get('CH0_STATE', ''),
                 '1': os.environ.get('CH1_STATE', ''),
-                '2': os.environ.get('CH2_STATE', '')
+                '2': os.environ.get('CH2_STATE', ''),
+                '3': os.environ.get('CHTG_STATE', '')
             }
         },
         'mqtt': {
@@ -78,6 +80,8 @@ class Ec133:
         self.brightness = [255] * 3
         self.register = [255] * 3
         self.lock = threading.Lock()
+        self.tgstate = "ON"
+        self.tgbrightness = [0] * 3
 
     def __del__(self):
         msg("Closing serial device")
@@ -153,6 +157,28 @@ class Ec133:
             msg("Channel%s : mqtt_json format expected , got %s!" % (ch, type(payload)))
             return
 
+        if ch == 3:
+
+            if self.tgstate == "ON":
+                # it is on , we are goint to off but first store curent settings
+                self.tgbrightness = self.brightness
+                self.tgstate = "OFF"
+            else:
+                # it is off , we are goint to restore settings
+                self.brightness = self.tgbrightness
+                self.tgstate = "ON"
+
+            msg("Toggle command %s" % self.tgstate)
+            for i in range(0, 2):
+                payload['state'] = self.tgstate
+                self._send(client, userdata, message, payload, ch)
+
+            return
+
+        self._send(client, userdata, message, payload, ch)
+
+    def _send(self, client, userdata, message, payload, ch):
+
         self.lock.acquire(blocking=True, timeout=-1)
 
         msg("Channel%s command: %s" % (ch, payload))
@@ -164,6 +190,7 @@ class Ec133:
 
         if payload.get('state', 'ON') == 'ON':
             self.register[ch] = int(self.brightness[ch])
+            self.tgstate = "ON"
         else:
             self.register[ch] = int(0)
 
@@ -184,7 +211,7 @@ class Ec133:
         else:
             time.sleep(0.02)
             self.lock.release()
-            if bool(self.callback):
+            if bool(self.callback) and ch < 3:
                 self.callback(ch, payload)
 
 
@@ -195,7 +222,7 @@ class Mqtt:
         self.ctopics = command_topics
         self.stopics = state_topics
         self.callback = callback
-        self.consumers = [None] * 3
+        self.consumers = [None] * 4
 
     def __del__(self):
         msg("Stopping all mq connections")
