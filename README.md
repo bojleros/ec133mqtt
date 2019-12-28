@@ -28,19 +28,22 @@ https://github.com/bojleros/ec133mqtt/blob/master/app/main.py#L28
 
 This is an example of environmental file:
 ```
-# cat /ec133mqtt/env 
+# cat /ec133mqtt/env
 CH0_COMMAND=lights/main_room/sofa/cmd
 CH1_COMMAND=lights/main_room/table/cmd
 CH2_COMMAND=lights/main_room/tv/cmd
+CHTG_COMMAND=lights/main_room/tgcmd
 CH0_STATE=lights/main_room/sofa/state
 CH1_STATE=lights/main_room/table/state
 CH2_STATE=lights/main_room/tv/state
+CHTG_STATE=lights/main_room/tv/state-not-used
 MQTT_ADDR=broker.localner
 MQTT_USER=test
 MQTT_PASS=test
 ```
 
 As you can see each channel is given two topics. One for commands and second for state updates. It is designed to work with Home Assistant mqtt_json lights.
+CHTG is a special case. As my living room has two entrances i wanted to implement a stair switch configuration. You can controll it by sending empty json here, payload is meaningles.
 
 **Please plan your topic names carefully. Read MQTT manuals first.**
 
@@ -98,7 +101,7 @@ light:
 
 ## Additional features
 
-I do like to use retained messages since it restores light state after service restart. It is also much more easier to refresh status of sliders and buttons that way when new client kicks in. That's quite important if you are going to control your lights from remote location but unfortunately we cannot assure that each command message will contain all necessary fields (state and brightness). 
+I do like to use retained messages since it restores light state after service restart. It is also much more easier to refresh status of sliders and buttons that way when new client kicks in. That's quite important if you are going to control your lights from remote location but unfortunately we cannot assure that each command message will contain all necessary fields (state and brightness).
 
 There goes an edge case 1:
 
@@ -122,6 +125,6 @@ If we are considering updation of a sliders and buttons problem is solved. Curre
 1. Received from mqtt without changing the dimmer registers.
 2. Having missing keys restored using a current state of dimmer.
 3. Republished into the command topic by the ec133mqtt itself.
-4. Processed as a fully 
+4. Processed as a fully
 
-No further ideas so far. 
+No further ideas so far.
