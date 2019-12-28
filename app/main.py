@@ -175,6 +175,7 @@ class Ec133:
             msg("Toggle command %s" % self.tgstate)
             for i in range(0, 2):
                 payload['state'] = self.chstate[i]
+                payload.pop('brightness', None)
                 self._send(client, userdata, message, payload, i)
 
             return
