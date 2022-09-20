@@ -158,7 +158,7 @@ class Ec133:
         msg("Channel%s command: %s" % (ch, payload))
 
         if payload.get("brightness", False):
-            self.brightness[ch] = int(payload['brightness'])
+            self.brightness[ch] = int(float(payload['brightness']))
         else:
             payload['brightness'] = int(self.brightness[ch])
 
