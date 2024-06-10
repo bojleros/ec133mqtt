@@ -158,7 +158,7 @@ class Ec133:
         msg("Channel%s command: %s" % (ch, payload))
 
         if payload.get("brightness", False):
-            self.brightness[ch] = int(payload['brightness'])
+            self.brightness[ch] = int(float(payload['brightness']))
         else:
             payload['brightness'] = int(self.brightness[ch])
 
@@ -278,7 +278,7 @@ class Mqtt:
 
         # homeassistant lack proper typing
         # on the other side json module is constantly puting double quotation marks around ints ...
-        payload_str = "{\"state\": \"%s\", \"brightness\": %s}" % (payload['state'], payload['brightness'])
+        payload_str = "{\"state\": \"%s\", \"brightness\": %s}" % (payload['state'], int(float(payload['brightness'])))
 
         try:
             publish.single(self.stopics[str(ch)],
