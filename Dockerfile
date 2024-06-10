@@ -1,8 +1,7 @@
-FROM alpine:3.8
+FROM alpine:3.20
 
-RUN apk --no-cache add mosquitto-clients py3-paho-mqtt && \
-    apk add --no-cache --repository http://nl.alpinelinux.org/alpine/edge/testing py3-serial && \
-    pip3 install modbus-tk && \
+RUN apk --no-cache add mosquitto-clients py3-paho-mqtt  py3-pyserial && \
+    apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing py3-modbus-tk && \
     rm -rf /var/cache/apk/*
 
 ENV APP_DIR /app
